@@ -1,0 +1,6 @@
+trame>=3.0.0
+trame-client>=3.0.0
+trame-server>=3.0.0
+trame-vuetify>=3.0.0
+playwright>=1.40.0
+python-dotenv>=1.0.0
