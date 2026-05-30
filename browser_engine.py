@@ -1,21 +1,20 @@
 import asyncio
 import random
-import logging
-from pathlib import Path
 from typing import Callable, Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from loguru import logger
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 import config
+from config import settings
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(config.LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(),
-    ],
+logger.add(
+    settings.log_file,
+    rotation="10 MB",
+    retention="7 days",
+    format="{time:YYYY-MM-DD HH:mm:ss} [{level}] {message}",
+    level="INFO",
 )
-logger = logging.getLogger(__name__)
 
 
 class OKXOrbitEngine:
@@ -48,13 +47,13 @@ class OKXOrbitEngine:
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(
             headless=headless,
-            slow_mo=config.BROWSER_SLOW_MO,
+            slow_mo=settings.BROWSER_SLOW_MO,
         )
 
-        if config.SESSION_FILE.exists():
+        if settings.session_file.exists():
             self._emit_log("检测到已保存的会话，正在恢复...")
             self._context = await self._browser.new_context(
-                storage_state=str(config.SESSION_FILE),
+                storage_state=str(settings.session_file),
                 viewport={"width": 1280, "height": 800},
             )
         else:
@@ -63,14 +62,14 @@ class OKXOrbitEngine:
             )
 
         self._page = await self._context.new_page()
-        self._page.set_default_timeout(config.BROWSER_TIMEOUT)
+        self._page.set_default_timeout(settings.BROWSER_TIMEOUT)
         self._running = True
         self._emit_status("浏览器已启动")
 
     async def stop(self):
         self._running = False
         if self._context:
-            await self._context.storage_state(path=str(config.SESSION_FILE))
+            await self._context.storage_state(path=str(settings.session_file))
             self._emit_log("会话已保存")
         if self._browser:
             await self._browser.close()
@@ -78,10 +77,11 @@ class OKXOrbitEngine:
             await self._playwright.stop()
         self._emit_status("浏览器已关闭")
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def navigate_to_feed(self):
-        self._emit_status(f"正在导航到 OKX Orbit...")
-        await self._page.goto(config.OKX_ORBIT_URL, wait_until="networkidle")
-        await self._page.wait_for_timeout(config.PAGE_LOAD_WAIT)
+        self._emit_status("正在导航到 OKX Orbit...")
+        await self._page.goto(settings.OKX_ORBIT_URL, wait_until="networkidle")
+        await self._page.wait_for_timeout(settings.PAGE_LOAD_WAIT)
         self._emit_status("已到达 OKX Orbit 页面")
 
     async def check_login_required(self) -> bool:
@@ -107,7 +107,7 @@ class OKXOrbitEngine:
         start_time = asyncio.get_event_loop().time()
         while asyncio.get_event_loop().time() - start_time < timeout_seconds:
             if not await self.check_login_required():
-                await self._context.storage_state(path=str(config.SESSION_FILE))
+                await self._context.storage_state(path=str(settings.session_file))
                 self._emit_status("登录成功！会话已保存")
                 self._emit_log("登录成功，后续运行将自动恢复会话")
                 return True
@@ -135,6 +135,7 @@ class OKXOrbitEngine:
                 continue
         return []
 
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=5))
     async def post_comment(self, text: str) -> bool:
         try:
             comment_boxes = await self.find_comment_boxes()
@@ -210,10 +211,7 @@ class OKXOrbitEngine:
         if coins is None:
             coins = config.DEFAULT_COINS
         if delay_range is None:
-            delay_range = (
-                config.MIN_DELAY_BETWEEN_COMMENTS,
-                config.MAX_DELAY_BETWEEN_COMMENTS,
-            )
+            delay_range = (settings.MIN_DELAY, settings.MAX_DELAY)
 
         self._emit_status(f"开始自动评论 (目标: {count} 条)")
 

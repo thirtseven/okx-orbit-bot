@@ -5,6 +5,7 @@ from trame.ui.vuetify3 import SinglePageLayout
 from trame.widgets import vuetify3 as v3
 
 import config
+from config import settings
 from browser_engine import OKXOrbitEngine
 
 
@@ -22,9 +23,9 @@ class OKXOrbitApp(TrameApp):
                 "comments_posted": 0,
                 "template_type": "generic",
                 "comment_count": 5,
-                "min_delay": config.MIN_DELAY_BETWEEN_COMMENTS,
-                "max_delay": config.MAX_DELAY_BETWEEN_COMMENTS,
-                "headless": config.BROWSER_HEADLESS,
+                "min_delay": settings.MIN_DELAY,
+                "max_delay": settings.MAX_DELAY,
+                "headless": settings.BROWSER_HEADLESS,
                 "template_types": ["generic", "bullish", "bearish", "neutral"],
                 "selected_coins": [],
                 "available_coins": [

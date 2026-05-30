@@ -1,29 +1,39 @@
-import os
 from pathlib import Path
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
 
-# ─── Browser Settings ───────────────────────────────────────────────────────
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-BROWSER_HEADLESS = os.getenv("BROWSER_HEADLESS", "false").lower() == "true"
-BROWSER_SLOW_MO = int(os.getenv("BROWSER_SLOW_MO", "100"))
-BROWSER_TIMEOUT = int(os.getenv("BROWSER_TIMEOUT", "60000"))
+    BROWSER_HEADLESS: bool = False
+    BROWSER_SLOW_MO: int = 100
+    BROWSER_TIMEOUT: int = 60000
 
-# ─── OKX Settings ───────────────────────────────────────────────────────────
+    OKX_ORBIT_URL: str = "https://www.okx.com/zh-hans/orbit/feed"
+    OKX_LOGIN_URL: str = "https://www.okx.com/login"
 
-OKX_ORBIT_URL = "https://www.okx.com/zh-hans/orbit/feed"
-OKX_LOGIN_URL = "https://www.okx.com/login"
+    MIN_DELAY: int = 30
+    MAX_DELAY: int = 90
+    PAGE_LOAD_WAIT: int = 5000
 
-# ─── Session Storage ────────────────────────────────────────────────────────
+    @property
+    def session_dir(self) -> Path:
+        path = Path(__file__).parent / "sessions"
+        path.mkdir(exist_ok=True)
+        return path
 
-SESSION_DIR = Path(__file__).parent / "sessions"
-SESSION_DIR.mkdir(exist_ok=True)
-SESSION_FILE = SESSION_DIR / "okx_session.json"
+    @property
+    def session_file(self) -> Path:
+        return self.session_dir / "okx_session.json"
 
-# ─── Comment Templates ──────────────────────────────────────────────────────
+    @property
+    def log_file(self) -> Path:
+        return Path(__file__).parent / "bot.log"
 
-# Template variables: {coin} {price} {change} {symbol}
+
+settings = Settings()
+
+
 COMMENT_TEMPLATES = {
     "bullish": [
         "{coin} ({symbol}) 看起来要起飞了！技术面突破关键阻力位，目标价看到更高！🚀",
@@ -94,8 +104,6 @@ COMMENT_TEMPLATES = {
     ],
 }
 
-# ─── Hot Topics (from OKX Orbit) ────────────────────────────────────────────
-
 HOT_TOPICS = [
     "#纽交所母公司授权OKX推出原油合约",
     "#HYPE回调：空头退场与机构接力同步",
@@ -106,8 +114,6 @@ HOT_TOPICS = [
     "#CLARITY法案：60票门槛，最快8月签署",
     "#美伊谈判：伊朗宣称掌控霍尔木兹",
 ]
-
-# ─── Popular Coins (Default) ────────────────────────────────────────────────
 
 DEFAULT_COINS = [
     {"name": "Bitcoin", "symbol": "BTC", "price": "$73,780", "change": "+1.16%"},
@@ -121,13 +127,3 @@ DEFAULT_COINS = [
     {"name": "ALLO", "symbol": "ALLO", "price": "$0.20", "change": "+121%"},
     {"name": "HYPE", "symbol": "HYPE", "price": "$18", "change": "-5.2%"},
 ]
-
-# ─── Timing Settings ────────────────────────────────────────────────────────
-
-MIN_DELAY_BETWEEN_COMMENTS = int(os.getenv("MIN_DELAY", "30"))
-MAX_DELAY_BETWEEN_COMMENTS = int(os.getenv("MAX_DELAY", "90"))
-PAGE_LOAD_WAIT = int(os.getenv("PAGE_LOAD_WAIT", "5000"))
-
-# ─── Logging ─────────────────────────────────────────────────────────────────
-
-LOG_FILE = Path(__file__).parent / "bot.log"

@@ -3,4 +3,6 @@ trame-client>=3.0.0
 trame-server>=3.0.0
 trame-vuetify>=3.0.0
 playwright>=1.40.0
-python-dotenv>=1.0.0
+pydantic-settings>=2.0.0
+loguru>=0.7.0
+tenacity>=8.0.0
