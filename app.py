@@ -78,9 +78,9 @@ class OKXOrbitApp(TrameApp):
                                 variant="outlined",
                             )
                             with v3.VCard():
-                                with v3.VCardTitle():
+                                with v3.VCardTitle() as title:
+                                    title.set_text("控制面板")
                                     v3.VIcon("mdi-remote", classes="mr-2")
-                                    v3.Html("span", "控制面板")
 
                                 with v3.VCardText():
                                     with v3.VRow():
@@ -201,9 +201,9 @@ class OKXOrbitApp(TrameApp):
 
                         with v3.VCol(cols=6):
                             with v3.VCard(variant="outlined"):
-                                with v3.VCardTitle():
+                                with v3.VCardTitle() as title:
+                                    title.set_text("运行日志")
                                     v3.VIcon("mdi-text-box-multiple", classes="mr-2")
-                                    v3.Html("span", "运行日志")
 
                                 with v3.VCardText():
                                     v3.VTextarea(
