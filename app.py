@@ -26,6 +26,8 @@ class OKXOrbitApp(TrameApp):
                 "min_delay": settings.MIN_DELAY,
                 "max_delay": settings.MAX_DELAY,
                 "headless": settings.BROWSER_HEADLESS,
+                "cdp_url": settings.CDP_URL,
+                "use_cdp": True,
                 "template_types": ["generic", "bullish", "bearish", "neutral"],
                 "selected_coins": [],
                 "available_coins": [
@@ -156,6 +158,29 @@ class OKXOrbitApp(TrameApp):
                                                 density="compact",
                                             )
 
+                                        with v3.VCol(cols=12):
+                                            v3.VSwitch(
+                                                v_model=(
+                                                    "use_cdp",
+                                                    True,
+                                                ),
+                                                label="通过 CDP 连接 Edge 浏览器",
+                                                color="primary",
+                                                density="compact",
+                                            )
+
+                                        with v3.VCol(cols=12):
+                                            v3.VTextField(
+                                                v_model=(
+                                                    "cdp_url",
+                                                    "http://localhost:9222",
+                                                ),
+                                                label="CDP 地址",
+                                                variant="outlined",
+                                                density="compact",
+                                                placeholder="http://localhost:9222",
+                                            )
+
                                     v3.VDivider(classes="my-4")
 
                                     with v3.VRow():
@@ -230,7 +255,8 @@ class OKXOrbitApp(TrameApp):
 
     def _start_browser(self):
         async def _do_start():
-            await self.engine.start(headless=self.state.headless)
+            cdp_url = self.state.cdp_url if self.state.use_cdp else None
+            await self.engine.start(headless=self.state.headless, cdp_url=cdp_url)
             await self.engine.navigate_to_feed()
             self.state.running = True
 

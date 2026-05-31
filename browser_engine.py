@@ -42,37 +42,57 @@ class OKXOrbitEngine:
         if self._on_log:
             self._on_log(message)
 
-    async def start(self, headless: bool = False):
+    async def start(self, headless: bool = False, cdp_url: str = None):
         self._emit_status("启动浏览器...")
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
-            headless=headless,
-            slow_mo=settings.BROWSER_SLOW_MO,
-        )
 
-        if settings.session_file.exists():
-            self._emit_log("检测到已保存的会话，正在恢复...")
-            self._context = await self._browser.new_context(
-                storage_state=str(settings.session_file),
-                viewport={"width": 1280, "height": 800},
-            )
+        if cdp_url:
+            self._emit_log(f"通过 CDP 连接 Edge 浏览器: {cdp_url}")
+            self._browser = await self._playwright.chromium.connect_over_cdp(cdp_url)
+            self._context = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
+            pages = self._context.pages
+            if pages:
+                self._page = pages[0]
+                self._emit_log(f"已连接到现有标签页: {await self._page.title()}")
+            else:
+                self._page = await self._context.new_page()
+                self._emit_log("已创建新标签页")
         else:
-            self._context = await self._browser.new_context(
-                viewport={"width": 1280, "height": 800},
+            self._emit_log("启动本地 Chromium 浏览器...")
+            self._browser = await self._playwright.chromium.launch(
+                headless=headless,
+                slow_mo=settings.BROWSER_SLOW_MO,
             )
 
-        self._page = await self._context.new_page()
+            if settings.session_file.exists():
+                self._emit_log("检测到已保存的会话，正在恢复...")
+                self._context = await self._browser.new_context(
+                    storage_state=str(settings.session_file),
+                    viewport={"width": 1280, "height": 800},
+                )
+            else:
+                self._context = await self._browser.new_context(
+                    viewport={"width": 1280, "height": 800},
+                )
+            self._page = await self._context.new_page()
+
         self._page.set_default_timeout(settings.BROWSER_TIMEOUT)
         self._running = True
         self._emit_status("浏览器已启动")
 
     async def stop(self):
         self._running = False
-        if self._context:
-            await self._context.storage_state(path=str(settings.session_file))
-            self._emit_log("会话已保存")
+        if self._context and not self._browser.is_connected():
+            try:
+                await self._context.storage_state(path=str(settings.session_file))
+                self._emit_log("会话已保存")
+            except Exception:
+                pass
         if self._browser:
-            await self._browser.close()
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
         if self._playwright:
             await self._playwright.stop()
         self._emit_status("浏览器已关闭")
@@ -107,9 +127,12 @@ class OKXOrbitEngine:
         start_time = asyncio.get_event_loop().time()
         while asyncio.get_event_loop().time() - start_time < timeout_seconds:
             if not await self.check_login_required():
-                await self._context.storage_state(path=str(settings.session_file))
-                self._emit_status("登录成功！会话已保存")
-                self._emit_log("登录成功，后续运行将自动恢复会话")
+                try:
+                    await self._context.storage_state(path=str(settings.session_file))
+                    self._emit_log("会话已保存")
+                except Exception:
+                    pass
+                self._emit_status("登录成功！")
                 return True
             await asyncio.sleep(2)
 
@@ -121,6 +144,7 @@ class OKXOrbitEngine:
             '[data-testid="comment-input"]',
             'textarea[placeholder*="评论"]',
             'textarea[placeholder*="comment"]',
+            'textarea[placeholder*="说点什么"]',
             'div[contenteditable="true"]',
             '.comment-input',
             'textarea',

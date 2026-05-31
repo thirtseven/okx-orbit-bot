@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     BROWSER_HEADLESS: bool = False
     BROWSER_SLOW_MO: int = 100
     BROWSER_TIMEOUT: int = 60000
+    CDP_URL: str = "http://localhost:9222"
 
     OKX_ORBIT_URL: str = "https://www.okx.com/zh-hans/orbit/feed"
     OKX_LOGIN_URL: str = "https://www.okx.com/login"
