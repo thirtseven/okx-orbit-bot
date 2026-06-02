@@ -1,33 +1,64 @@
 #!/bin/bash
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${GREEN}=== 启动 Edge 浏览器 (CDP 模式) ===${NC}"
+echo -e "${GREEN}=== Edge CDP 启动器 ===${NC}"
 
-EDGE_PATH="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
-CDP_PORT=9222
+CDP_PORT=${1:-9222}
+EDGE_PATHS=(
+    "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+    "/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe"
+)
 
-if [ ! -f "$EDGE_PATH" ]; then
-    EDGE_PATH="/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe"
-fi
+EDGE_PATH=""
+for path in "${EDGE_PATHS[@]}"; do
+    if [ -f "$path" ]; then
+        EDGE_PATH="$path"
+        break
+    fi
+done
 
-if [ ! -f "$EDGE_PATH" ]; then
-    echo "未找到 Edge 浏览器"
+if [ -z "$EDGE_PATH" ]; then
+    echo -e "${RED}✗ 未找到 Edge 浏览器${NC}"
     exit 1
 fi
 
+echo -e "Edge 路径: ${YELLOW}${EDGE_PATH}${NC}"
+echo -e "CDP 端口: ${YELLOW}${CDP_PORT}${NC}"
+
+if netstat -tlnp 2>/dev/null | grep -q ":${CDP_PORT} "; then
+    echo -e "${GREEN}✓ CDP 端口 ${CDP_PORT} 已在监听${NC}"
+    exit 0
+fi
+
 echo -e "${YELLOW}启动 Edge 浏览器...${NC}"
-echo -e "CDP 端口: ${GREEN}${CDP_PORT}${NC}"
-echo ""
 
-powershell.exe -Command "Start-Process '$EDGE_PATH' -ArgumentList '--remote-debugging-port=${CDP_PORT}'" 2>/dev/null
+USER_DATA_DIR="$HOME/.edge-cdp-profile"
+mkdir -p "$USER_DATA_DIR"
 
-sleep 3
+powershell.exe -Command "
+    Start-Process -FilePath '$EDGE_PATH' -ArgumentList @(
+        '--remote-debugging-port=${CDP_PORT}',
+        '--user-data-dir=$USER_DATA_DIR',
+        '--no-first-run',
+        '--no-default-browser-check'
+    ) -WindowStyle Normal
+" 2>/dev/null
 
-echo -e "${GREEN}✓ Edge 浏览器已启动${NC}"
-echo ""
-echo -e "请在 Edge 浏览器中:"
-echo -e "1. 登录 OKX 账户"
-echo -e "2. 访问 https://www.okx.com/zh-hans/orbit/feed"
-echo -e "3. 然后在控制面板点击 '启动并导航'"
+echo -e "${YELLOW}等待 CDP 端口就绪...${NC}"
+for i in {1..30}; do
+    if netstat -tlnp 2>/dev/null | grep -q ":${CDP_PORT} "; then
+        echo -e "${GREEN}✓ Edge 已启动，CDP 端口 ${CDP_PORT} 就绪${NC}"
+        echo ""
+        echo -e "请在 Edge 浏览器中:"
+        echo -e "1. 登录 OKX 账户"
+        echo -e "2. 访问 https://www.okx.com/zh-hans/orbit/feed"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo -e "${RED}✗ CDP 端口启动超时${NC}"
+exit 1

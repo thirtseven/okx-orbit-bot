@@ -3,7 +3,7 @@ import random
 from typing import Callable, Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 import config
 from config import settings
@@ -15,6 +15,10 @@ logger.add(
     format="{time:YYYY-MM-DD HH:mm:ss} [{level}] {message}",
     level="INFO",
 )
+
+
+class CDPConnectionError(Exception):
+    pass
 
 
 class OKXOrbitEngine:
@@ -42,59 +46,100 @@ class OKXOrbitEngine:
         if self._on_log:
             self._on_log(message)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(CDPConnectionError),
+    )
+    async def _connect_cdp(self, cdp_url: str):
+        try:
+            self._emit_log(f"尝试 CDP 连接: {cdp_url}")
+            browser = await self._playwright.chromium.connect_over_cdp(
+                cdp_url,
+                timeout=10000,
+            )
+            return browser
+        except Exception as e:
+            raise CDPConnectionError(f"CDP 连接失败: {str(e)}")
+
     async def start(self, headless: bool = False, cdp_url: str = None):
         self._emit_status("启动浏览器...")
         self._playwright = await async_playwright().start()
 
         if cdp_url:
-            self._emit_log(f"通过 CDP 连接 Edge 浏览器: {cdp_url}")
-            self._browser = await self._playwright.chromium.connect_over_cdp(cdp_url)
-            self._context = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
-            pages = self._context.pages
-            if pages:
-                self._page = pages[0]
-                self._emit_log(f"已连接到现有标签页: {await self._page.title()}")
-            else:
-                self._page = await self._context.new_page()
-                self._emit_log("已创建新标签页")
-        else:
-            self._emit_log("启动本地 Chromium 浏览器...")
-            self._browser = await self._playwright.chromium.launch(
-                headless=headless,
-                slow_mo=settings.BROWSER_SLOW_MO,
-            )
+            try:
+                self._browser = await self._connect_cdp(cdp_url)
+                self._emit_log("CDP 连接成功")
 
-            if settings.session_file.exists():
-                self._emit_log("检测到已保存的会话，正在恢复...")
-                self._context = await self._browser.new_context(
-                    storage_state=str(settings.session_file),
-                    viewport={"width": 1280, "height": 800},
-                )
-            else:
-                self._context = await self._browser.new_context(
-                    viewport={"width": 1280, "height": 800},
-                )
-            self._page = await self._context.new_page()
+                contexts = self._browser.contexts
+                if contexts:
+                    self._context = contexts[0]
+                    pages = self._context.pages
+                    if pages:
+                        self._page = pages[0]
+                        title = await self._page.title()
+                        self._emit_log(f"已连接到标签页: {title}")
+                    else:
+                        self._page = await self._context.new_page()
+                        self._emit_log("已创建新标签页")
+                else:
+                    self._context = await self._browser.new_context()
+                    self._page = await self._context.new_page()
+                    self._emit_log("已创建新上下文和标签页")
+
+            except CDPConnectionError as e:
+                self._emit_log(f"CDP 连接失败: {str(e)}")
+                self._emit_log("回退到本地浏览器模式...")
+                await self._start_local(headless)
+            except Exception as e:
+                self._emit_log(f"CDP 连接异常: {str(e)}")
+                self._emit_log("回退到本地浏览器模式...")
+                await self._start_local(headless)
+        else:
+            await self._start_local(headless)
 
         self._page.set_default_timeout(settings.BROWSER_TIMEOUT)
         self._running = True
         self._emit_status("浏览器已启动")
 
+    async def _start_local(self, headless: bool = False):
+        self._emit_log("启动本地 Chromium 浏览器...")
+        self._browser = await self._playwright.chromium.launch(
+            headless=headless,
+            slow_mo=settings.BROWSER_SLOW_MO,
+        )
+
+        if settings.session_file.exists():
+            self._emit_log("检测到已保存的会话，正在恢复...")
+            self._context = await self._browser.new_context(
+                storage_state=str(settings.session_file),
+                viewport={"width": 1280, "height": 800},
+            )
+        else:
+            self._context = await self._browser.new_context(
+                viewport={"width": 1280, "height": 800},
+            )
+        self._page = await self._context.new_page()
+
     async def stop(self):
         self._running = False
-        if self._context and not self._browser.is_connected():
-            try:
-                await self._context.storage_state(path=str(settings.session_file))
-                self._emit_log("会话已保存")
-            except Exception:
-                pass
-        if self._browser:
-            try:
-                await self._browser.close()
-            except Exception:
-                pass
-        if self._playwright:
-            await self._playwright.stop()
+        try:
+            if self._browser and self._browser.is_connected():
+                if self._context:
+                    try:
+                        await self._context.storage_state(path=str(settings.session_file))
+                        self._emit_log("会话已保存")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        try:
+            if self._playwright:
+                await self._playwright.stop()
+        except Exception:
+            pass
+
         self._emit_status("浏览器已关闭")
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
